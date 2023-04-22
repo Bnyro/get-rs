@@ -1,4 +1,8 @@
-use std::{cmp::min, fs::File, io::Write};
+use std::{
+    cmp::min,
+    fs::{remove_file, File},
+    io::Write,
+};
 
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -32,8 +36,8 @@ async fn download_file(url: String, target: String) -> Result<(), String> {
     let progress = ProgressBar::new(download_size);
     let progress_style = ProgressStyle::default_bar()
         .template("\n{msg}\n\n{spinner:.cyan/blue} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})");
-    progress.set_style(progress_style);
-    progress.set_message(&format!(" Downloading {}", url));
+    progress.set_style(progress_style.unwrap());
+    progress.set_message(format!("Downloading {}", url));
 
     while let Some(item) = stream.next().await {
         let chunk = item.or(Err(format!("Error while downloading file")))?;
@@ -43,7 +47,7 @@ async fn download_file(url: String, target: String) -> Result<(), String> {
         progress.set_position(downloaded);
     }
 
-    progress.finish_with_message(&format!("  Downloaded {} to {}", url, target));
+    progress.finish_with_message(format!("  Downloaded {} to {}", url, target));
     return Ok(());
 }
 
@@ -56,8 +60,17 @@ async fn main() {
         .last()
         .unwrap_or(url.replace("/", "").as_str())
         .to_owned();
+    let target = args.get(2).unwrap_or(&default_target).to_owned();
+    let target_copy = target.clone();
 
-    let target = args.get(2).unwrap_or(&default_target);
+    ctrlc::set_handler(move || {
+        let file = std::path::Path::new(target_copy.as_str());
+        _ = remove_file(file);
+        println!("\n\nFinished cleanup. See you next time!");
+        std::process::exit(1);
+    })
+    .expect("Unable to set ctrl c handler!");
+
     download_file(url.to_owned(), target.to_owned())
         .await
         .unwrap();
