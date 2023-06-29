@@ -2,6 +2,7 @@ use std::{
     cmp::min,
     fs::{remove_file, File},
     io::Write,
+    path::Path,
 };
 
 use futures_util::StreamExt;
@@ -9,9 +10,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 
 fn create_file(file_path: String) -> File {
-    let path = std::path::Path::new(&file_path);
+    let path = Path::new(&file_path);
     if path.exists() {
-        println!("\nFile already exists! Resuming.");
+        println!("\nFile already exists! Quitting...");
         std::process::exit(1);
     }
     File::create(path).expect(format!("Failed to create file '{}'!", file_path).as_str())
@@ -23,11 +24,9 @@ async fn download_file(url: String, target: String) -> Result<(), String> {
         .get(&url)
         .send()
         .await
-        .or(Err(format!("Failed to get from url: {}", &url)))?;
+        .or(Err(format!("Failed to connect to {}", &url)))?;
 
-    let download_size = request
-        .content_length()
-        .ok_or(format!("Failed to get content length! {}", &url))?;
+    let download_size = request.content_length().unwrap_or(0);
 
     let mut file = create_file(target.clone());
     let mut downloaded = 0;
@@ -54,13 +53,18 @@ async fn download_file(url: String, target: String) -> Result<(), String> {
 #[tokio::main]
 async fn main() {
     let args: Vec<_> = std::env::args().collect();
-    let url = args.get(1).expect("Please provide a URL!");
-    let default_target = url
+    if args.len() == 0 {
+        println!("Please provide an URL as parameter!");
+        return;
+    }
+
+    let url = args.get(1).unwrap();
+    let download_file_name = url
         .split("/")
         .last()
         .unwrap_or(url.replace("/", "").as_str())
         .to_owned();
-    let target = args.get(2).unwrap_or(&default_target).to_owned();
+    let target = args.get(2).unwrap_or(&download_file_name).to_owned();
     let target_copy = target.clone();
 
     ctrlc::set_handler(move || {
@@ -71,7 +75,10 @@ async fn main() {
     })
     .expect("Unable to set ctrl c handler!");
 
-    download_file(url.to_owned(), target.to_owned())
-        .await
-        .unwrap();
+    match download_file(url.to_owned(), target.to_owned()).await {
+        Err(err) => {
+            println!("Error: {}", err.to_string())
+        }
+        _ => {}
+    };
 }
