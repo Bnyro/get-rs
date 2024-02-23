@@ -15,7 +15,7 @@ fn create_file(file_path: String) -> File {
         println!("\nFile already exists! Quitting...");
         std::process::exit(1);
     }
-    File::create(path).expect(format!("Failed to create file '{}'!", file_path).as_str())
+    File::create(path).unwrap_or_else(|_| panic!("Failed to create file '{}'!", file_path))
 }
 
 async fn download_file(url: String, target: String) -> Result<(), String> {
@@ -39,30 +39,30 @@ async fn download_file(url: String, target: String) -> Result<(), String> {
     progress.set_message(format!("Downloading {}", url));
 
     while let Some(item) = stream.next().await {
-        let chunk = item.or(Err(format!("Error while downloading file")))?;
+        let chunk = item.or(Err("Error while downloading file".to_string()))?;
         file.write(&chunk)
-            .or(Err(format!("Error while writing to file")))?;
+            .or(Err("Error while writing to file".to_string()))?;
         downloaded = min(downloaded + (chunk.len() as u64), download_size);
         progress.set_position(downloaded);
     }
 
     progress.finish_with_message(format!("  Downloaded {} to {}", url, target));
-    return Ok(());
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() {
     let args: Vec<_> = std::env::args().collect();
-    if args.len() == 0 {
+    if args.is_empty() {
         println!("Please provide an URL as parameter!");
         return;
     }
 
     let url = args.get(1).unwrap();
     let download_file_name = url
-        .split("/")
+        .split('/')
         .last()
-        .unwrap_or(url.replace("/", "").as_str())
+        .unwrap_or(url.replace('/', "").as_str())
         .to_owned();
     let target = args.get(2).unwrap_or(&download_file_name).to_owned();
     let target_copy = target.clone();
@@ -75,10 +75,7 @@ async fn main() {
     })
     .expect("Unable to set ctrl c handler!");
 
-    match download_file(url.to_owned(), target.to_owned()).await {
-        Err(err) => {
-            println!("Error: {}", err.to_string())
-        }
-        _ => {}
+    if let Err(err) = download_file(url.to_owned(), target.to_owned()).await {
+        println!("Error: {}", err)
     };
 }
