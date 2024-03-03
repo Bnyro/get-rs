@@ -9,27 +9,39 @@ use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 
-fn create_file(file_path: String) -> File {
-    let path = Path::new(&file_path);
+const CMD_NAME: &str = "get";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn print_usage() {
+    println!("\nUsage: {} <URL> <PATH>", CMD_NAME);
+}
+
+fn print_version() {
+    println!("\n{} v{}", CMD_NAME, VERSION);
+}
+
+fn create_file(file_path: &str) -> File {
+    let path = Path::new(file_path);
     if path.exists() {
-        println!("\nFile already exists! Quitting...");
+        println!("\nFile already exists. Nothing left to do here, see you!");
         std::process::exit(1);
     }
     File::create(path).unwrap_or_else(|_| panic!("Failed to create file '{}'!", file_path))
 }
 
-async fn download_file(url: String, target: String) -> Result<(), String> {
+#[allow(clippy::unused_io_amount)]
+async fn download_file(url: &str, target: &str) -> Result<(), String> {
     let client = Client::new();
     let request = client
-        .get(&url)
+        .get(url)
         .send()
         .await
         .or(Err(format!("Failed to connect to {}", &url)))?;
 
+    let mut downloaded = 0;
     let download_size = request.content_length().unwrap_or(0);
 
-    let mut file = create_file(target.clone());
-    let mut downloaded = 0;
+    let mut file = create_file(target);
     let mut stream = request.bytes_stream();
 
     let progress = ProgressBar::new(download_size);
@@ -53,12 +65,23 @@ async fn download_file(url: String, target: String) -> Result<(), String> {
 #[tokio::main]
 async fn main() {
     let args: Vec<_> = std::env::args().collect();
-    if args.is_empty() {
-        println!("Please provide an URL as parameter!");
+    if args.len() <= 1 {
+        print_usage();
         return;
     }
 
-    let url = args.get(1).unwrap();
+    let first_arg = args.get(1).unwrap();
+    if vec!["-h", "--help", "h", "help"].contains(&first_arg.as_str()) {
+        print_usage();
+        return;
+    }
+
+    if vec!["-v", "--version", "v", "version"].contains(&first_arg.as_str()) {
+        print_version();
+        return;
+    }
+
+    let url = first_arg;
     let download_file_name = url
         .split('/')
         .last()
@@ -75,7 +98,7 @@ async fn main() {
     })
     .expect("Unable to set ctrl c handler!");
 
-    if let Err(err) = download_file(url.to_owned(), target.to_owned()).await {
+    if let Err(err) = download_file(url, &target).await {
         println!("Error: {}", err)
     };
 }
